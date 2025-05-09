@@ -2,108 +2,143 @@ import ast
 import joblib
 import numpy as np
 import pandas as pd
-
 from sklearn.impute import SimpleImputer
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 
-
-def load_and_parse_data(filepath, vector_columns, target_columns):
+def load_and_preprocess_data(filepath):
+    """Load and preprocess the dataset"""
     df = pd.read_csv(filepath)
-
-    # Convert stringified vectors to NumPy arrays
-    for col in vector_columns:
-        df[col] = df[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
-        df[col] = df[col].apply(lambda x: np.array(x, dtype=np.float64) if isinstance(x, list) else np.nan)
-
+    
+    # Convert stringified lists to actual arrays
+    vector_cols = ['Track', 'Focus', 'Opponents', 'WheelSpinVel']
+    for col in vector_cols:
+        df[col] = df[col].apply(lambda x: np.array(ast.literal_eval(x)) if isinstance(x, str) else x)
+    
     return df
 
+def prepare_features_and_targets(df):
+    """Prepare features and targets with proper dimensions"""
+    # Scalar features (individual columns)
+    scalar_features = df[[
+        'Timestamp', 'SpeedX', 'SpeedY', 'SpeedZ', 'RPM', 
+        'Angle', 'TrackPos', 'Fuel', 'CurLapTime', 'LastLapTime',
+        'DistFromStart', 'DistRaced', 'Damage', 'RacePos', 'Z'
+    ]].values
+    
+    # Vector features (expanded arrays)
+    track_features = np.stack(df['Track'].values)  # 19 features
+    focus_features = np.stack(df['Focus'].values)  # 5 features (input)
+    wheel_features = np.stack(df['WheelSpinVel'].values)  # 4 features
+    
+    # Combine all features (43 total)
+    X = np.hstack([
+        scalar_features,
+        track_features,
+        focus_features,
+        wheel_features
+    ])
+    
+    # Targets (4 controls + 5 focus outputs)
+    y_controls = df[['Accel', 'Brake', 'Gear', 'Steer']].values
+    y_focus = np.stack(df['Focus'].values)  # Predict focus again
+    
+    y = np.hstack([y_controls, y_focus])
+    
+    return X, y
 
-def extract_scalar_features(df, exclude_columns):
-    scalar_columns = [col for col in df.columns if col not in exclude_columns]
-    scalar_features = df[scalar_columns].apply(pd.to_numeric, errors='coerce')
+def train_model(X, y):
+    """Train and save the model"""
+    print(f"\n🔧 Raw feature shape: {X.shape}, Target shape: {y.shape}")
 
-    if scalar_features.isna().any().any():
-        scalar_features = scalar_features.fillna(scalar_features.mean())
+    # Save and log training feature order
+    feature_order = [
+        'Timestamp', 'SpeedX', 'SpeedY', 'SpeedZ', 'RPM', 
+        'Angle', 'TrackPos', 'Fuel', 'CurLapTime', 'LastLapTime',
+        'DistFromStart', 'DistRaced', 'Damage', 'RacePos', 'Z',
+        *[f'Track_{i}' for i in range(19)],
+        *[f'Focus_{i}' for i in range(5)],
+        *[f'WheelSpinVel_{i}' for i in range(4)]
+    ]
+    with open("torcs_feature_order.txt", "w") as f:
+        for feat in feature_order:
+            f.write(f"{feat}\n")
+    print("📄 Saved feature order to torcs_feature_order.txt")
 
-    return scalar_features
+    # Imputers
+    imputer_X = SimpleImputer(strategy='mean',add_indicator=True)
+    imputer_y = SimpleImputer(strategy='mean',add_indicator=True)
+    
+    X_imputed = imputer_X.fit_transform(X)
+    y_imputed = imputer_y.fit_transform(y)
 
+    print(f"\n🧼 First 5 values after imputation: {X_imputed[0][:5]}")
 
-def extract_vector_features(df, vector_columns):
-    vector_arrays = []
-
-    for col in vector_columns:
-        col_data = df[col].apply(lambda x: x if isinstance(x, np.ndarray) else np.nan)
-
-        # Get max vector length
-        max_len = max((len(x) for x in col_data if isinstance(x, np.ndarray)), default=0)
-
-        # Pad or replace with NaN-filled arrays
-        padded_data = col_data.apply(lambda x: np.pad(x, (0, max_len - len(x)), mode='constant') 
-                                     if isinstance(x, np.ndarray) else np.full(max_len, np.nan))
-
-        stacked = np.stack(padded_data.values)
-        vector_arrays.append(stacked)
-
-    # Concatenate all vector features
-    vector_features = np.hstack(vector_arrays)
-
-    # Handle NaNs
-    if np.isnan(vector_features).any():
-        col_means = np.nanmean(vector_features, axis=0)
-        inds = np.where(np.isnan(vector_features))
-        vector_features[inds] = np.take(col_means, inds[1])
-
-    return vector_features
-
-
-def extract_targets(df, target_columns):
-    y = df[target_columns].apply(pd.to_numeric, errors='coerce')
-
-    if y.isna().any().any():
-        y = y.fillna(y.mean())
-
-    return y
-
-
-def train_and_save_model(X, y, model_path="torcs_driver_model.pkl", scaler_path="torcs_scaler.pkl"):
-    # Final safety check: impute any NaNs
-    if np.isnan(X).any():
-        print("⚠️ Final NaNs found in X. Using SimpleImputer to replace them.")
-        imputer = SimpleImputer(strategy="mean")
-        X = imputer.fit_transform(X)
-
-    # Scale and split
+    # Scaling
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2)
+    X_scaled = scaler.fit_transform(X_imputed)
 
+    # Target scaling
+    target_scaler = StandardScaler()
+    y_scaled = target_scaler.fit_transform(y_imputed)
+
+    print(f"\n📊 Scaler mean (first 5): {scaler.mean_[:5]}")
+    print(f"📈 Scaler scale (first 5): {scaler.scale_[:5]}")
+    
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_scaled, y_scaled, test_size=0.2, random_state=42
+    )
+    
     # Train model
-    model = MLPRegressor(hidden_layer_sizes=(64, 64), max_iter=500)
+    model = MLPRegressor(
+        hidden_layer_sizes=(128, 128),
+        activation='relu',
+        solver='adam',
+        max_iter=1000,
+        early_stopping=True,
+        random_state=42
+    )
     model.fit(X_train, y_train)
 
-    # Save model and scaler
-    joblib.dump(model, model_path)
-    joblib.dump(scaler, scaler_path)
-
-    print("✅ Model training completed and saved.")
-
-
+    # Evaluate
+    train_score = model.score(X_train, y_train)
+    test_score = model.score(X_test, y_test)
+    print(f"\n✅ Training R²: {train_score:.3f}, Testing R²: {test_score:.3f}")
+    
+    # Save artifacts
+    joblib.dump(model, 'torcs_model.pkl')
+    joblib.dump(scaler, 'torcs_scaler.pkl')
+    joblib.dump(imputer_X, 'torcs_imputer_X.pkl')
+    joblib.dump(imputer_y, 'torcs_imputer_y.pkl')
+    joblib.dump(target_scaler, 'torcs_target_scaler.pkl')
+    
+    print(f"💾 Model and preprocessing artifacts saved.")
 
 def main():
-    vector_columns = ['Track', 'Focus', 'WheelSpinVel']
-    target_columns = ['Accel', 'Brake', 'Gear', 'Steer']
-    filepath = "logfile.csv"
-
-    df = load_and_parse_data(filepath, vector_columns, target_columns)
-    scalar_features = extract_scalar_features(df, exclude_columns=vector_columns + target_columns)
-    vector_features = extract_vector_features(df, vector_columns)
-    X = np.hstack([scalar_features.values, vector_features])
-    y = extract_targets(df, target_columns)
-
-    train_and_save_model(X, y)
-
+    # Configuration
+    DATA_PATH = "logfile.csv"
+    
+    # Load and preprocess
+    df = load_and_preprocess_data(DATA_PATH)
+    
+    # Prepare features and targets
+    X, y = prepare_features_and_targets(df)
+    
+    # Print sample data
+    print("\n🧠 Sample input features:")
+    print(f"Scalars: {X[0, :15]}...")
+    print(f"Track: {X[0, 15:15+19][:5]}...")
+    print(f"Focus: {X[0, 15+19:15+19+5]}")
+    print(f"Wheel: {X[0, 15+19+5:15+19+5+4]}")
+    
+    print("\n🎯 Sample targets:")
+    print(f"Controls: {y[0, :4]}")
+    print(f"Focus: {y[0, 4:]}")
+    
+    # Train and save
+    train_model(X, y)
 
 if __name__ == "__main__":
     main()

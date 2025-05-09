@@ -1,75 +1,140 @@
 import joblib
 import numpy as np
-from msgParser import MsgParser  # Import the message parser
+from msgParser import MsgParser
 from carState import CarState
 
 class Driver:
     def __init__(self, stage):
         self.stage = stage
-        self.parser = MsgParser()  # Create a message parser instance
-        self.model = joblib.load("torcs_driver_model.pkl")
-        self.scaler = joblib.load("torcs_scaler.pkl")
-        
-        # Define expected features in the order the model expects them
-        self.input_features = [
-            'speedX', 'speedY', 'speedZ', 'gear', 'rpm', 'angle', 'trackPos',
-            'fuel', 'curLapTime', 'lastLapTime', 'distFromStart', 'distRaced',
-            'damage', 'racePos', 'z', 'stage', 'carname'
+        self.parser = MsgParser()
+        try:
+            print("🔄 Loading model files...")
+            self.model = joblib.load("torcs_model.pkl")
+            self.scaler = joblib.load("torcs_scaler.pkl")
+            self.imputer_X = joblib.load("torcs_imputer_X.pkl")
+            self.imputer_y = joblib.load("torcs_imputer_y.pkl")
+            self.target_scaler = joblib.load("torcs_target_scaler.pkl")
+            print("✅ Model files loaded successfully.")
+
+        except Exception as e:
+            print(f"❌ Error loading model files: {str(e)}")
+            raise
+
+        self.feature_order = [
+            'Timestamp', 'SpeedX', 'SpeedY', 'SpeedZ', 'RPM', 
+            'Angle', 'TrackPos', 'Fuel', 'CurLapTime', 'LastLapTime',
+            'DistFromStart', 'DistRaced', 'Damage', 'RacePos', 'Z',
+            *[f'Track_{i}' for i in range(19)],
+            *[f'Focus_{i}' for i in range(5)],
+            *[f'WheelSpinVel_{i}' for i in range(4)]
+        ]
+        self.current_focus = np.array([-1.0] * 5)
+        self.feature_order = [
+            'Timestamp', 'SpeedX', 'SpeedY', 'SpeedZ', 'RPM', 
+            'Angle', 'TrackPos', 'Fuel', 'CurLapTime', 'LastLapTime',
+            'DistFromStart', 'DistRaced', 'Damage', 'RacePos', 'Z',
+            *[f'Track_{i}' for i in range(19)],
+            *[f'Focus_{i}' for i in range(5)],
+            *[f'WheelSpinVel_{i}' for i in range(4)]
         ]
 
+        # 🔍 Verify feature order matches training
+        try:
+            with open("torcs_feature_order.txt") as f:
+                training_order = [line.strip() for line in f]
+            if self.feature_order != training_order:
+                raise ValueError("Feature order mismatch between runtime and training.")
+            print("✅ Feature order verified and matches training.")
+        except Exception as e:
+            print(f"❌ Feature order check failed: {e}")
+            raise
+
+        
+
     def init(self):
-        return "(init {})".format(self.stage)
+        return f"(init {self.stage})"
 
     def drive(self, str_sensors, track, car):
         try:
-            # Create and populate CarState object
             car_state = CarState()
             car_state.setFromMsg(str_sensors)
-            
-            features = self.extract_features(car_state)
-            # Ensure all features are present and in correct order
-            input_data = np.array([[features.get(key, 0.0) for key in self.input_features]])
-            input_scaled = self.scaler.transform(input_data)
-            output = self.model.predict(input_scaled)[0]
-            
-            # Assuming output is [accel, brake, gear, steer, focus0, focus1, focus2, focus3, focus4]
-            accel, brake, gear, steer, *focus = output
-            focus = [int(round(f)) for f in focus]  # Convert all focus values
-            
-            return f"(accel {accel})(brake {brake})(gear {int(round(gear))})(steer {steer})(focus {' '.join(map(str, focus))})"
-        except Exception as e:
-            print(f"Error in drive(): {str(e)}")
-            # Return default safe values in case of error
-            return "(accel 0.2)(brake 0)(gear 1)(steer 0)(focus 0 0 0 0 0)"
 
-    def extract_features(self, car_state):
-        """Extract features from CarState object"""
-        features = {
-            'speedX': car_state.getSpeedX() if car_state.getSpeedX() is not None else 0.0,
-            'speedY': car_state.getSpeedY() if car_state.getSpeedY() is not None else 0.0,
-            'speedZ': car_state.getSpeedZ() if car_state.getSpeedZ() is not None else 0.0,
-            'gear': car_state.getGear() if car_state.getGear() is not None else 1,
-            'rpm': car_state.getRpm() if car_state.getRpm() is not None else 0.0,
-            'angle': car_state.getAngle() if car_state.getAngle() is not None else 0.0,
-            'trackPos': car_state.getTrackPos() if car_state.getTrackPos() is not None else 0.0,
-            'fuel': car_state.getFuel() if car_state.getFuel() is not None else 0.0,
-            'curLapTime': car_state.getCurLapTime() if car_state.getCurLapTime() is not None else 0.0,
-            'lastLapTime': car_state.getLastLapTime() if car_state.getLastLapTime() is not None else 0.0,
-            'distFromStart': car_state.getDistFromStart() if car_state.getDistFromStart() is not None else 0.0,
-            'distRaced': car_state.getDistRaced() if car_state.getDistRaced() is not None else 0.0,
-            'damage': car_state.getDamage() if car_state.getDamage() is not None else 0.0,
-            'racePos': car_state.getRacePos() if car_state.getRacePos() is not None else 1,
-            'z': car_state.getZ() if car_state.getZ() is not None else 0.0,
-            'stage': self.stage,
-            'carname': 1  # Default value
+            print("🚗 Parsing car state...")
+
+            features = [
+                0.0,
+                car_state.speedX,
+                car_state.speedY,
+                car_state.speedZ,
+                car_state.rpm,
+                car_state.angle,
+                car_state.trackPos,
+                car_state.fuel,
+                car_state.curLapTime,
+                car_state.lastLapTime,
+                car_state.distFromStart,
+                car_state.distRaced,
+                car_state.damage,
+                car_state.racePos,
+                car_state.z,
+                *car_state.track,
+                *self.current_focus,
+                *car_state.wheelSpinVel
+            ]
+
+            print("🧠 Raw feature vector:")
+            for name, val in zip(self.feature_order, features):
+                print(f"   {name}: {val:.4f}" if isinstance(val, float) else f"   {name}: {val}")
+
+            features = np.array(features).reshape(1, -1)
+            features = self.imputer_X.transform(features)
+            features = self.scaler.transform(features)
+
+            print("📏 Scaled feature vector (first 10):", features[0][:10])
+            print("📐 Feature vector shape:", features.shape)
+
+            output = self.model.predict(features)                         # shape: (1, 9)
+            output = self.imputer_y.inverse_transform(output)             # still (1, 9)
+            output = self.target_scaler.inverse_transform(output)[0]      # extract to 1D shape: (9,)
+
+            print("🔮 Raw model output:", output)
+
+            accel = np.clip(output[0], 0, 1)
+            brake = np.clip(output[1], 0, 1)
+            gear = int(np.clip(round(output[2]), 1, 6))
+            steer = np.clip(output[3], -1, 1)
+            new_focus = np.clip(output[4:9], -1, 1)
+
+            print(f"🚦 Predicted controls → Accel: {accel:.3f}, Brake: {brake:.3f}, Gear: {gear}, Steer: {steer:.3f}")
+            print("👀 Predicted focus:", new_focus)
+
+            self.current_focus = new_focus
+
+            return f"(accel {accel:.3f})(brake {brake:.3f})(gear {gear})(steer {steer:.3f})"
+
+        except Exception as e:
+            print(f"❌ Error in drive(): {str(e)}")
+            self.current_focus = np.array([-1.0] * 5)
+            return "(accel 0.2)(brake 0)(gear 1)(steer 0)"
+
+    def get_state_features(self, car_state):
+        return {
+            'Timestamp': 0.0,
+            'SpeedX': car_state.speedX,
+            'SpeedY': car_state.speedY,
+            'SpeedZ': car_state.speedZ,
+            'RPM': car_state.rpm,
+            'Angle': car_state.angle,
+            'TrackPos': car_state.trackPos,
+            'Fuel': car_state.fuel,
+            'CurLapTime': car_state.curLapTime,
+            'LastLapTime': car_state.lastLapTime,
+            'DistFromStart': car_state.distFromStart,
+            'DistRaced': car_state.distRaced,
+            'Damage': car_state.damage,
+            'RacePos': car_state.racePos,
+            'Z': car_state.z,
+            **{f'Track_{i}': val for i, val in enumerate(car_state.track)},
+            **{f'Focus_{i}': val for i, val in enumerate(self.current_focus)},
+            **{f'WheelSpinVel_{i}': val for i, val in enumerate(car_state.wheelSpinVel)}
         }
-        
-        # Handle focus if available
-        if hasattr(car_state, 'focus') and car_state.focus is not None:
-            try:
-                focus_values = list(car_state.focus)[:5]  # Take first 5 focus values
-                features.update({f'focus{i}': val for i, val in enumerate(focus_values)})
-            except:
-                pass
-                
-        return features

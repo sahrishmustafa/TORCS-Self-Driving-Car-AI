@@ -2,5 +2,5 @@ This file contains the source code to run the TORCS car and gather dataset, trai
 
 1. Driver_manual contains the logic to drive manually, to gather the dataset. 
 2. Logger logs the Car State and Car control parameters, to be used for training data.
-3. Tarin contains the SKLearn based Neural Network to train the data.
+3. Train contains the SKLearn based Neural Network to train the data.
 4. Finally Driver contains the logic to drive the car using the trained dataset.
