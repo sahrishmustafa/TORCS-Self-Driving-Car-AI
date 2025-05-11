@@ -2,8 +2,8 @@ import sys
 import socket
 import argparse
 from msgParser import MsgParser
-from aidriver import AIDriver
-# import driver_manual as driver
+# from aidriver import AIDriver
+from driver_manual import Driver
 
 KEY_MAP = {
     'angle': 'angle',
@@ -143,13 +143,14 @@ def run_episode(sock, ai_driver, arguments):
             buf = receive_data_from_server(sock)
         
         # 2. Parse data and compute controls
-        sensor_dict = parse_sensor_data(buf)
-        control_dict = drive(sensor_dict, ai_driver)
-        control_msg = parser.dict_to_msg(control_dict)
+        # sensor_dict = parse_sensor_data(buf)
+        # control_dict = drive(sensor_dict, ai_driver)
+        # control_msg = parser.dict_to_msg(control_dict)
+        buf = ai_driver.drive(buf, arguments.track, arguments.car)
         
         # 3. Send control message back
         try:
-            sock.sendto(control_msg.encode('utf-8'), (arguments.host_ip, arguments.host_port))
+            sock.sendto(buf.encode('utf-8'), (arguments.host_ip, arguments.host_port))
         except socket.error as msg:
             print(f"Critical send error: {msg}")
             sys.exit(-1)
@@ -190,7 +191,8 @@ def main():
     # sock.settimeout(5.0)
     shutdownClient = False
     curEpisode = 0
-    ai_driver = AIDriver(arguments.track, arguments.car)
+    # ai_driver = AIDriver(arguments.track, arguments.car)
+    driver = Driver()
 
     # Send bot ID to server
     while not shutdownClient:
@@ -199,10 +201,11 @@ def main():
 
     # Run simulation episodes
     while not shutdownClient and curEpisode < arguments.max_episodes:
-        run_episode(sock, ai_driver, arguments)
+        # run_episode(sock, ai_driver, arguments)
+        run_episode(sock, driver, arguments)
         curEpisode += 1
 
-    shutdown_and_cleanup(sock)
+    # shutdown_and_cleanup(sock)
 
 if __name__ == '__main__':
     main()
