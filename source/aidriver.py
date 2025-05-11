@@ -112,7 +112,8 @@ class AIDriver:
                 'accel': 1.0,   # Full acceleration
                 'brake': 0.0,   # No braking
                 'steer': 0.0,   # Straight ahead
-                'gear': 1       # First gear
+                'gear': 1,       # First gear
+                'meta': 0
             }
             
         # Normal model prediction
@@ -193,6 +194,8 @@ class AIDriver:
         # Round gear and ensure valid range
         controls['gear'] = int(round(controls['gear']))
         controls['gear'] = max(1, min(6, controls['gear']))
+        controls['meta'] = 0
+        
         
         # Make sure we're not braking and accelerating at the same time
         if controls['accel'] > 0.5 and controls['brake'] > 0.1:

@@ -42,3 +42,19 @@ class MsgParser(object):
                 msg += ')'
         
         return msg
+    
+    def dict_to_msg(self, data_dict):
+        """
+        Converts a dictionary like {'accel': 0.123, 'gear': 3} into a TORCS-style message string.
+        """
+        msg_parts = []
+        required_keys = ['accel', 'brake', 'gear', 'steer', 'focus', 'meta']
+        for key in required_keys:
+            value = data_dict.get(key, 0)  # Default to 0 if missing
+            if isinstance(value, list):
+                val_str = ' '.join(str(v) for v in value)
+                msg_parts.append(f"({key} {val_str})")
+            else:
+                msg_parts.append(f"({key} {value})")
+    
+        return ''.join(msg_parts)

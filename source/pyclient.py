@@ -106,18 +106,17 @@ def send_initial_message(sock, host_ip, host_port, bot_id):
     return False
 
 def receive_data_from_server(sock):
-    """Receive data from the server and handle timeouts"""
-    try:
-        sock.settimeout(10)  # Allow more time for response
-        buf, addr = sock.recvfrom(1000)
-        buf = buf.decode('utf-8')  # Explicitly decode with utf-8
-    except socket.timeout:
-        print("Didn't get response from server... Retrying")
-        buf = None
-    except socket.error as msg:
-        print("Socket error:", msg)
-        buf = None
-    return buf
+    """Receive data with aggressive retry logic"""
+    while True:  # Loop indefinitely until data is received
+        try:
+            sock.settimeout(0.5)  # Very short timeout to avoid blocking
+            buf, addr = sock.recvfrom(1000)
+            return buf.decode('utf-8')
+        except socket.timeout:
+            continue  # Silently retry
+        except socket.error as msg:
+            print(f"Fatal socket error: {msg}")
+            sys.exit(-1)
 
 def drive(sensor_data, ai_driver):
     """Compute the controls based on sensor data using AI driver"""
@@ -128,35 +127,36 @@ def drive(sensor_data, ai_driver):
         'brake': controls['brake'],   # 0-1
         'steer': controls['steer'],   # -1 to 1
         'gear': controls['gear'],     # Integer 1-6
-        'focus': [0, 0, 0, 0, 0]      # Not used but required
+        'focus': [0, 0, 0, 0, 0],      # Not used but required
+        'meta': 0
     }
 
 def run_episode(sock, ai_driver, arguments):
     """Run a single episode of the simulation"""
     currentStep = 0
-    parser = MsgParser() 
+    parser = MsgParser()
+    
     while True:
-        buf = receive_data_from_server(sock)
-        control_msg = "(meta 1)"  # Default message
+        # 1. Receive sensor data from server
+        buf = None
+        while not buf:  # Keep trying until data arrives
+            buf = receive_data_from_server(sock)
         
-        if buf:
-            sensor_dict = parse_sensor_data(buf)
-            control_dict = drive(sensor_dict, ai_driver)
-            control_msg = parser.dict_to_msg(control_dict)  # Generate control message
-
-        currentStep += 1
-        if currentStep == arguments.max_steps:
-            break
-
+        # 2. Parse data and compute controls
+        sensor_dict = parse_sensor_data(buf)
+        control_dict = drive(sensor_dict, ai_driver)
+        control_msg = parser.dict_to_msg(control_dict)
+        
+        # 3. Send control message back
         try:
             sock.sendto(control_msg.encode('utf-8'), (arguments.host_ip, arguments.host_port))
         except socket.error as msg:
-            print("Failed to send data...Exiting...")
+            print(f"Critical send error: {msg}")
             sys.exit(-1)
-
-def shutdown_and_cleanup(sock):
-    """Shutdown and cleanup the client socket"""
-    sock.close()
+        
+        currentStep += 1
+        if arguments.max_steps > 0 and currentStep >= arguments.max_steps:
+            break
 
 def main():
     # Configure the argument parser
@@ -182,11 +182,12 @@ def main():
 
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(1.0)
     except socket.error as msg:
         print('Could not make a socket. Exiting...')
         sys.exit(-1)
 
-    sock.settimeout(5.0)
+    # sock.settimeout(5.0)
     shutdownClient = False
     curEpisode = 0
     ai_driver = AIDriver(arguments.track, arguments.car)
