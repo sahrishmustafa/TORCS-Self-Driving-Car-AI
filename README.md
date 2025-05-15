@@ -4,20 +4,20 @@ This repository contains a TORCS (The Open Racing Car Simulator) client-side Pyt
 
 ---
 
-## 📦 Features
+## Features
 
-### ✅ Manual Driving Data Collection
+### Manual Driving Data Collection
 Record human driver actions while playing TORCS to create a training dataset.
 
-### ✅ AI Driver Using ML Models
+### AI Driver Using ML Models
 Train and deploy AI drivers based on user-collected data using various machine learning models.
 
-### ✅ Model Training Support
+### Model Training Support
 Scripts provided to train with Decision Trees, Random Forests, and MLP Regressors.
 
 ---
 
-## 🗂️ File Overview
+## File Overview
 
 | File | Description |
 |------|-------------|
@@ -38,7 +38,7 @@ Scripts provided to train with Decision Trees, Random Forests, and MLP Regressor
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Dataset Collection
 
@@ -46,9 +46,10 @@ To collect gameplay data:
 
 ```bash
 python pyclient.py --track [TRACK_NUM] --car [CAR_NUM]
+```
 Example:
+``` bash
 python pyclient.py --track 0 --car 2
-
 ```
 
 This will launch TORCS in manual mode, where your actions are recorded and saved for training.
@@ -63,7 +64,7 @@ Once trained, launch the AI driver:
 python pyclient_ai.py
 This starts the TORCS client and uses the trained model to control the car.
 
-# 🛠 Requirements
+# Requirements
 - Python 3.x
 - TORCS installed and running in client-server mode
 ## Python packages
@@ -80,11 +81,11 @@ pip install -r requirements.txt
 ```
 (Create requirements.txt if needed with dependencies listed.)
 
-## 📂 Logs and Models
-Dataset Logs: Saved as .csv files containing features and controls from gameplay.
-Model Files: Saved after training using joblib, used by aidriver.py.
+## Logs and Models
+- Dataset Logs: Saved as .csv files containing features and controls from gameplay.
+- Model Files: Saved after training using joblib, used by aidriver.py.
 
-## 📌 Notes
+## Notes
 Make sure TORCS is running in client-server mode before launching the Python client.
 Models are trained on the specific format of data collected using this framework. Ensure consistency.
 
