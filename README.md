@@ -63,25 +63,28 @@ Once trained, launch the AI driver:
 python pyclient_ai.py
 This starts the TORCS client and uses the trained model to control the car.
 
-## 🛠 Requirements
-Python 3.x
-TORCS installed and running in client-server mode
-Python packages
+# 🛠 Requirements
+- Python 3.x
+- TORCS installed and running in client-server mode
+## Python packages
+```bash
 numpy
 pandas
 sklearn
 joblib
+```
+
 Install required packages:
+``` bash
 pip install -r requirements.txt
+```
 (Create requirements.txt if needed with dependencies listed.)
 
 ## 📂 Logs and Models
 Dataset Logs: Saved as .csv files containing features and controls from gameplay.
-
 Model Files: Saved after training using joblib, used by aidriver.py.
 
 ## 📌 Notes
 Make sure TORCS is running in client-server mode before launching the Python client.
-
 Models are trained on the specific format of data collected using this framework. Ensure consistency.
 
